@@ -14,25 +14,11 @@ service cloud.firestore {
       return course in ['IoT', 'Robotics', 'Space Electronics', 'RTL'];
     }
 
-    function validCourseCapacity(course, capacity) {
+    function validCapacity(course, capacity) {
       return (course == 'IoT' && capacity == 35)
         || (course == 'Robotics' && capacity == 40)
         || (course == 'Space Electronics' && capacity == 35)
         || (course == 'RTL' && capacity == 40);
-    }
-
-    function validCourseDocument(courseId) {
-      return validCourse(courseId)
-        && request.resource.data.keys().hasOnly(['capacity', 'filled'])
-        && request.resource.data.capacity is int
-        && request.resource.data.filled is int
-        && validCourseCapacity(courseId, request.resource.data.capacity)
-        && request.resource.data.filled >= 0
-        && request.resource.data.filled <= request.resource.data.capacity;
-    }
-
-    function coursePath(course) {
-      return /databases/$(database)/documents/courses/$(course);
     }
 
     function registrationPath(uid) {
@@ -64,73 +50,51 @@ service cloud.firestore {
         && data.studentName.size() <= 80
         && validCourse(data.selectedCourse)
         && data.createdAt == request.time
-        && data.createdAtClient is timestamp
-        && existsAfter(coursePath(data.selectedCourse))
-        && (
-          (
-            exists(coursePath(data.selectedCourse))
-            && getAfter(coursePath(data.selectedCourse)).data.capacity
-                == get(coursePath(data.selectedCourse)).data.capacity
-            && getAfter(coursePath(data.selectedCourse)).data.filled
-                == get(coursePath(data.selectedCourse)).data.filled + 1
-            && getAfter(coursePath(data.selectedCourse)).data.filled
-                <= get(coursePath(data.selectedCourse)).data.capacity
-          )
-          || (
-            !exists(coursePath(data.selectedCourse))
-            && validCourseCapacity(
-              data.selectedCourse,
-              getAfter(coursePath(data.selectedCourse)).data.capacity
-            )
-            && getAfter(coursePath(data.selectedCourse)).data.filled == 1
-          )
-        )
-        && getAfter(registerNumberPath(data.registerNumberKey)).data.googleUid == uid
-        && getAfter(registerNumberPath(data.registerNumberKey)).data.registrationId == uid;
+        && data.createdAtClient is timestamp;
+    }
+
+    function validCourseDocument(courseId) {
+      return validCourse(courseId)
+        && request.resource.data.keys().hasOnly(['capacity', 'filled'])
+        && request.resource.data.capacity is int
+        && request.resource.data.filled is int
+        && validCapacity(courseId, request.resource.data.capacity)
+        && request.resource.data.filled >= 0
+        && request.resource.data.filled <= request.resource.data.capacity;
     }
 
     match /courses/{courseId} {
       allow read: if signedIn();
+
       allow create: if signedIn()
         && validCourseDocument(courseId)
-        && (
-          request.resource.data.filled == 0
-          || (
-            request.resource.data.filled == 1
-            && existsAfter(registrationPath(request.auth.uid))
-            && getAfter(registrationPath(request.auth.uid)).data.selectedCourse == courseId
-          )
-        );
-      allow update: if isAdmin()
-        || (
-          signedIn()
-          && validCourse(courseId)
-          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['filled'])
-          && request.resource.data.capacity == resource.data.capacity
-          && request.resource.data.filled == resource.data.filled + 1
-          && request.resource.data.filled <= resource.data.capacity
-          && !exists(registrationPath(request.auth.uid))
-          && existsAfter(registrationPath(request.auth.uid))
-          && getAfter(registrationPath(request.auth.uid)).data.selectedCourse == courseId
-          && existsAfter(registerNumberPath(getAfter(registrationPath(request.auth.uid)).data.registerNumberKey))
-          && getAfter(registerNumberPath(getAfter(registrationPath(request.auth.uid)).data.registerNumberKey)).data.googleUid == request.auth.uid
-        );
+        && (request.resource.data.filled == 0 || request.resource.data.filled == 1);
+
+      allow update: if signedIn()
+        && validCourseDocument(courseId)
+        && request.resource.data.capacity == resource.data.capacity
+        && request.resource.data.filled == resource.data.filled + 1
+        && request.resource.data.filled <= request.resource.data.capacity;
+
       allow delete: if false;
     }
 
     match /registrations/{uid} {
       allow get: if isAdmin() || (signedIn() && uid == request.auth.uid);
       allow list: if isAdmin();
+
       allow create: if signedIn()
         && uid == request.auth.uid
         && !exists(registrationPath(uid))
         && validRegistration(uid);
+
       allow update, delete: if false;
     }
 
     match /registerNumbers/{registerNumberKey} {
       allow get: if signedIn();
       allow list: if false;
+
       allow create: if signedIn()
         && registerNumberKey.matches('^[A-Z0-9-]{3,20}$')
         && !exists(registerNumberPath(registerNumberKey))
@@ -138,10 +102,8 @@ service cloud.firestore {
         && request.resource.data.googleUid == request.auth.uid
         && request.resource.data.registrationId == request.auth.uid
         && validCourse(request.resource.data.selectedCourse)
-        && request.resource.data.createdAt == request.time
-        && existsAfter(registrationPath(request.auth.uid))
-        && getAfter(registrationPath(request.auth.uid)).data.registerNumberKey == registerNumberKey
-        && getAfter(registrationPath(request.auth.uid)).data.selectedCourse == request.resource.data.selectedCourse;
+        && request.resource.data.createdAt == request.time;
+
       allow update, delete: if false;
     }
   }
