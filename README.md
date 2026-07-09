@@ -109,13 +109,13 @@ Security rules are in `firestore.rules`.
 - Nobody can update or delete registrations.
 - Course counter updates are accepted only when the same atomic write creates the matching registration and register-number lock.
 
-If the app shows `Missing or insufficient permissions`, deploy Firestore rules first:
+If the app shows `Missing or insufficient permissions`, deploy the latest Firestore rules first:
 
 ```bash
 firebase deploy --only firestore
 ```
 
-Then sign in with `dharaneesh963@gmail.com` and click **Verify / Create Courses** in the admin dashboard once.
+After the latest rules are deployed, signed-in students can register without admin approval. Missing course documents can be created safely by the registration transaction using the fixed official capacities.
 
 ## Local Development
 

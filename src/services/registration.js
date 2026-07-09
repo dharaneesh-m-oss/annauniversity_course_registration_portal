@@ -34,11 +34,7 @@ export async function registerStudent({ user, registerNumber, studentName, selec
       transaction.get(registerNumberRef)
     ]);
 
-    if (!courseSnap.exists()) {
-      throw new Error('Course setup is incomplete. Please contact the administrator.');
-    }
-
-    const course = courseSnap.data();
+    const course = courseSnap.exists() ? courseSnap.data() : {};
     const capacity = Number(course.capacity ?? COURSE_CAPACITIES[selectedCourse]);
     const filled = Number(course.filled ?? 0);
 
@@ -65,7 +61,14 @@ export async function registerStudent({ user, registerNumber, studentName, selec
       createdAtClient: Timestamp.now()
     };
 
-    transaction.update(courseRef, { filled: increment(1) });
+    if (courseSnap.exists()) {
+      transaction.update(courseRef, { filled: increment(1) });
+    } else {
+      transaction.set(courseRef, {
+        capacity: COURSE_CAPACITIES[selectedCourse],
+        filled: 1
+      });
+    }
     transaction.set(registerNumberRef, {
       googleUid: user.uid,
       registrationId: user.uid,
