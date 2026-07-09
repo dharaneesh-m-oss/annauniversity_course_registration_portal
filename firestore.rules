@@ -1,0 +1,113 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.email == 'dharaneesh963@gmail.com';
+    }
+
+    function validCourse(course) {
+      return course in ['IoT', 'Robotics', 'Space Electronics', 'RTL'];
+    }
+
+    function coursePath(course) {
+      return /databases/$(database)/documents/courses/$(course);
+    }
+
+    function registrationPath(uid) {
+      return /databases/$(database)/documents/registrations/$(uid);
+    }
+
+    function registerNumberPath(registerNumberKey) {
+      return /databases/$(database)/documents/registerNumbers/$(registerNumberKey);
+    }
+
+    function validRegistration(uid) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'googleUid',
+          'googleEmail',
+          'registerNumber',
+          'registerNumberKey',
+          'studentName',
+          'selectedCourse',
+          'createdAt',
+          'createdAtClient'
+        ])
+        && data.googleUid == uid
+        && data.googleEmail == request.auth.token.email
+        && data.registerNumber == data.registerNumberKey
+        && data.registerNumberKey.matches('^[A-Z0-9-]{3,20}$')
+        && data.studentName is string
+        && data.studentName.size() >= 2
+        && data.studentName.size() <= 80
+        && validCourse(data.selectedCourse)
+        && data.createdAt == request.time
+        && data.createdAtClient is timestamp
+        && exists(coursePath(data.selectedCourse))
+        && getAfter(coursePath(data.selectedCourse)).data.filled
+              == get(coursePath(data.selectedCourse)).data.filled + 1
+        && getAfter(coursePath(data.selectedCourse)).data.filled
+              <= get(coursePath(data.selectedCourse)).data.capacity
+        && getAfter(registerNumberPath(data.registerNumberKey)).data.googleUid == uid
+        && getAfter(registerNumberPath(data.registerNumberKey)).data.registrationId == uid;
+    }
+
+    match /courses/{courseId} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        && validCourse(courseId)
+        && request.resource.data.keys().hasOnly(['capacity', 'filled'])
+        && request.resource.data.capacity is int
+        && request.resource.data.filled is int
+        && request.resource.data.filled >= 0
+        && request.resource.data.filled <= request.resource.data.capacity;
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && validCourse(courseId)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['filled'])
+          && request.resource.data.capacity == resource.data.capacity
+          && request.resource.data.filled == resource.data.filled + 1
+          && request.resource.data.filled <= resource.data.capacity
+          && !exists(registrationPath(request.auth.uid))
+          && existsAfter(registrationPath(request.auth.uid))
+          && getAfter(registrationPath(request.auth.uid)).data.selectedCourse == courseId
+          && existsAfter(registerNumberPath(getAfter(registrationPath(request.auth.uid)).data.registerNumberKey))
+          && getAfter(registerNumberPath(getAfter(registrationPath(request.auth.uid)).data.registerNumberKey)).data.googleUid == request.auth.uid
+        );
+      allow delete: if false;
+    }
+
+    match /registrations/{uid} {
+      allow get: if isAdmin() || (signedIn() && uid == request.auth.uid);
+      allow list: if isAdmin();
+      allow create: if signedIn()
+        && uid == request.auth.uid
+        && !exists(registrationPath(uid))
+        && validRegistration(uid);
+      allow update, delete: if false;
+    }
+
+    match /registerNumbers/{registerNumberKey} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && registerNumberKey.matches('^[A-Z0-9-]{3,20}$')
+        && !exists(registerNumberPath(registerNumberKey))
+        && request.resource.data.keys().hasOnly(['googleUid', 'registrationId', 'selectedCourse', 'createdAt'])
+        && request.resource.data.googleUid == request.auth.uid
+        && request.resource.data.registrationId == request.auth.uid
+        && validCourse(request.resource.data.selectedCourse)
+        && request.resource.data.createdAt == request.time
+        && existsAfter(registrationPath(request.auth.uid))
+        && getAfter(registrationPath(request.auth.uid)).data.registerNumberKey == registerNumberKey
+        && getAfter(registrationPath(request.auth.uid)).data.selectedCourse == request.resource.data.selectedCourse;
+      allow update, delete: if false;
+    }
+  }
+}

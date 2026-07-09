@@ -1,0 +1,20 @@
+{
+  "courses": {
+    "IoT": {
+      "capacity": 35,
+      "filled": 0
+    },
+    "Robotics": {
+      "capacity": 40,
+      "filled": 0
+    },
+    "Space Electronics": {
+      "capacity": 35,
+      "filled": 0
+    },
+    "RTL": {
+      "capacity": 40,
+      "filled": 0
+    }
+  }
+}
