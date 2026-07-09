@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+const PRODUCTION_APP_URL = 'https://aucpmitians.vercel.app';
+
 function mapSupabaseUser(session) {
   const user = session?.user;
   if (!user) return null;
@@ -13,7 +15,7 @@ function mapSupabaseUser(session) {
 }
 
 function getRedirectUrl() {
-  return import.meta.env.VITE_APP_URL || window.location.origin;
+  return PRODUCTION_APP_URL;
 }
 
 export function useAuth() {

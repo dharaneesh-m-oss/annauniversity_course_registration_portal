@@ -28,7 +28,6 @@ https://juxpythwroesnzeaiydm.supabase.co/auth/v1/callback
 7. Add these redirect URLs in Supabase Auth URL settings:
 
 ```text
-http://localhost:5173
 https://aucpmitians.vercel.app
 ```
 
@@ -57,9 +56,10 @@ Site URL:
 https://aucpmitians.vercel.app
 
 Redirect URLs:
-http://localhost:5173
 https://aucpmitians.vercel.app
 ```
+
+Remove old redirect URLs such as `http://localhost:3000` and `http://localhost:5173`. If Supabase redirects to localhost, phones and other devices will show "site can't be reached".
 
 ## Database Tables
 
