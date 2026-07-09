@@ -29,7 +29,7 @@ https://juxpythwroesnzeaiydm.supabase.co/auth/v1/callback
 
 ```text
 http://localhost:5173
-https://annauniversity-course-registration-portal.vercel.app
+https://aucpmitians.vercel.app
 ```
 
 Use your exact Vercel domain if it is different.
@@ -41,7 +41,7 @@ Set these in `.env.local` for local development and in Vercel Project Settings f
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-public-anon-key
-VITE_APP_URL=https://annauniversity-course-registration-portal.vercel.app
+VITE_APP_URL=https://aucpmitians.vercel.app
 ```
 
 Get both values from Supabase:
@@ -54,11 +54,11 @@ Set Supabase `Authentication` > `URL Configuration` like this:
 
 ```text
 Site URL:
-https://annauniversity-course-registration-portal.vercel.app
+https://aucpmitians.vercel.app
 
 Redirect URLs:
 http://localhost:5173
-https://annauniversity-course-registration-portal.vercel.app
+https://aucpmitians.vercel.app
 ```
 
 ## Database Tables
