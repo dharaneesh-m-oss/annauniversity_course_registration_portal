@@ -25,7 +25,7 @@ import {
   registrationsCollection,
   seedMissingCourses
 } from './services/registration';
-import { formatTimestamp, toExcelCsv } from './utils';
+import { formatTimestamp, friendlyFirestoreError, toExcelCsv } from './utils';
 
 function friendlyAuthError(error) {
   if (!error) return '';
@@ -177,7 +177,7 @@ function StudentRegistration({ user, courses }) {
       })
       .catch((err) => {
         if (!active) return;
-        setError(err.message || 'Could not verify existing registration.');
+        setError(friendlyFirestoreError(err, 'check whether this Google account is already registered'));
       })
       .finally(() => {
         if (active) setCheckingStored(false);
@@ -213,7 +213,7 @@ function StudentRegistration({ user, courses }) {
       setExisting(storedRegistration);
       setMessage('Registration Successful. Saved in Firestore.');
     } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
+      setError(friendlyFirestoreError(err, 'save this registration'));
     } finally {
       setSubmitting(false);
     }
@@ -339,7 +339,7 @@ function AdminDashboard({ courses }) {
       (snapshot) => {
         setRegistrations(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
       },
-      (err) => setError(err.message)
+      (err) => setError(friendlyFirestoreError(err, 'read admin registrations'))
     );
   }, []);
 
@@ -351,7 +351,7 @@ function AdminDashboard({ courses }) {
         if (active) setSetupStatus(status);
       })
       .catch((err) => {
-        if (active) setSetupMessage(err.message || 'Could not check Firestore course setup.');
+        if (active) setSetupMessage(friendlyFirestoreError(err, 'check course storage setup'));
       })
       .finally(() => {
         if (active) setSetupLoading(false);
@@ -401,7 +401,7 @@ function AdminDashboard({ courses }) {
       setSetupStatus(status);
       setSetupMessage('Course storage setup verified. Missing course documents were created if needed.');
     } catch (err) {
-      setSetupMessage(err.message || 'Could not create course documents.');
+      setSetupMessage(friendlyFirestoreError(err, 'create missing course documents'));
     } finally {
       setSetupLoading(false);
     }

@@ -3,6 +3,7 @@ import { onSnapshot, query } from 'firebase/firestore';
 import { COURSE_ORDER, initialCourseState } from '../constants';
 import { isFirebaseConfigured } from '../firebase';
 import { coursesCollection } from '../services/registration';
+import { friendlyFirestoreError } from '../utils';
 
 export function useCourses(enabled = true) {
   const [courses, setCourses] = useState(initialCourseState);
@@ -31,7 +32,7 @@ export function useCourses(enabled = true) {
         setLoading(false);
       },
       (err) => {
-        setError(err.message);
+        setError(friendlyFirestoreError(err, 'read live seat availability'));
         setLoading(false);
       }
     );

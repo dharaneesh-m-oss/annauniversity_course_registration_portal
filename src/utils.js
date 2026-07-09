@@ -17,6 +17,24 @@ export function formatTimestamp(value) {
   }).format(date);
 }
 
+export function friendlyFirestoreError(error, action = 'access Firestore') {
+  if (!error) return '';
+
+  if (error.code === 'permission-denied' || /Missing or insufficient permissions/i.test(error.message || '')) {
+    return `Firestore blocked this request while trying to ${action}. Deploy firestore.rules, then sign in with the authorized admin email and click "Verify / Create Courses" once. If you are a student, ask admin to complete setup first.`;
+  }
+
+  if (error.code === 'unavailable') {
+    return 'Firestore is temporarily unavailable or the network is unstable. Please retry after a few seconds.';
+  }
+
+  if (error.code === 'not-found') {
+    return 'Required Firestore data is missing. Admin must click "Verify / Create Courses" before registration opens.';
+  }
+
+  return error.message || `Could not ${action}.`;
+}
+
 export function toExcelCsv(rows) {
   const header = ['Google Email', 'Register Number', 'Student Name', 'Course', 'Registration Time'];
   const body = rows.map((row) => [
