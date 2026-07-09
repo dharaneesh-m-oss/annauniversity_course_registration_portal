@@ -21,7 +21,7 @@ export function friendlyFirestoreError(error, action = 'access Firestore') {
   if (!error) return '';
 
   if (error.code === 'permission-denied' || /Missing or insufficient permissions/i.test(error.message || '')) {
-    return `Firestore blocked this request while trying to ${action}. Deploy the latest firestore.rules from this project. After that, signed-in students can register without admin approval.`;
+    return `Cannot ${action} yet because Firestore rules are not updated in Firebase. Deploy firestore.rules once, then students can register directly after Google sign-in.`;
   }
 
   if (error.code === 'unavailable') {

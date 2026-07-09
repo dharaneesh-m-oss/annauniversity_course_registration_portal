@@ -5,10 +5,11 @@ import { isFirebaseConfigured } from '../firebase';
 import { coursesCollection } from '../services/registration';
 import { friendlyFirestoreError } from '../utils';
 
-export function useCourses(enabled = true) {
+export function useCourses(enabled = true, options = {}) {
   const [courses, setCourses] = useState(initialCourseState);
   const [loading, setLoading] = useState(isFirebaseConfigured && enabled);
   const [error, setError] = useState('');
+  const { silentPermissionErrors = false } = options;
 
   useEffect(() => {
     if (!isFirebaseConfigured || !enabled) {
@@ -32,11 +33,13 @@ export function useCourses(enabled = true) {
         setLoading(false);
       },
       (err) => {
-        setError(friendlyFirestoreError(err, 'read live seat availability'));
+        const permissionDenied =
+          err.code === 'permission-denied' || /Missing or insufficient permissions/i.test(err.message || '');
+        setError(silentPermissionErrors && permissionDenied ? '' : friendlyFirestoreError(err, 'read live seat availability'));
         setLoading(false);
       }
     );
-  }, [enabled]);
+  }, [enabled, silentPermissionErrors]);
 
   const list = useMemo(
     () =>

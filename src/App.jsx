@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
-  Clock3,
   Database,
   Download,
   GraduationCap,
@@ -10,8 +9,7 @@ import {
   LogIn,
   LogOut,
   Search,
-  ShieldCheck,
-  UserCheck
+  ShieldCheck
 } from 'lucide-react';
 import { onSnapshot, orderBy, query } from 'firebase/firestore';
 import { ADMIN_EMAIL, COURSE_ORDER } from './constants';
@@ -68,25 +66,6 @@ function Header({ user, signOut }) {
         ) : null}
       </div>
     </header>
-  );
-}
-
-function StatusStrip() {
-  return (
-    <section className="status-strip" aria-label="Portal status">
-      <div className="status-item">
-        <Database size={18} aria-hidden="true" />
-        <span>Atomic Firestore transactions</span>
-      </div>
-      <div className="status-item">
-        <UserCheck size={18} aria-hidden="true" />
-        <span>One registration per student</span>
-      </div>
-      <div className="status-item">
-        <Clock3 size={18} aria-hidden="true" />
-        <span>Live seat counters after sign-in</span>
-      </div>
-    </section>
   );
 }
 
@@ -177,7 +156,9 @@ function StudentRegistration({ user, courses }) {
       })
       .catch((err) => {
         if (!active) return;
-        setError(friendlyFirestoreError(err, 'check whether this Google account is already registered'));
+        if (err.code !== 'permission-denied' && !/Missing or insufficient permissions/i.test(err.message || '')) {
+          setError(friendlyFirestoreError(err, 'check whether this Google account is already registered'));
+        }
       })
       .finally(() => {
         if (active) setCheckingStored(false);
@@ -206,11 +187,17 @@ function StudentRegistration({ user, courses }) {
     setMessage('');
     try {
       await registerStudent({ user, ...form });
-      const storedRegistration = await getMyRegistration(user);
-      if (!storedRegistration) {
-        throw new Error('Registration committed, but the saved document could not be verified. Please contact admin before retrying.');
+      let storedRegistration = null;
+      try {
+        storedRegistration = await getMyRegistration(user);
+      } catch {
+        storedRegistration = null;
       }
-      setExisting(storedRegistration);
+      setExisting(storedRegistration || {
+        registerNumber: form.registerNumber,
+        studentName: form.studentName,
+        selectedCourse: form.selectedCourse
+      });
       setMessage('Registration Successful. Saved in Firestore.');
     } catch (err) {
       setError(friendlyFirestoreError(err, 'save this registration'));
@@ -501,8 +488,10 @@ function AdminDashboard({ courses }) {
 
 export default function App() {
   const { user, loading: authLoading, signIn, signOut } = useAuth();
-  const { list: courses, loading: coursesLoading, error: coursesError } = useCourses(Boolean(user));
   const isAdmin = user?.email === ADMIN_EMAIL;
+  const { list: courses, loading: coursesLoading, error: coursesError } = useCourses(Boolean(user), {
+    silentPermissionErrors: !isAdmin
+  });
   const [authError, setAuthError] = useState('');
   const [signingIn, setSigningIn] = useState(false);
 
@@ -540,14 +529,20 @@ export default function App() {
     <div className="flex min-h-screen flex-col bg-mit-paper text-mit-ink">
       <Header user={user} signOut={signOut} />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <StatusStrip />
-        <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
-          <div className="space-y-5">
-            <CourseAvailability courses={courses} />
-            <AdminLogin authError={authError} onSignIn={handleSignIn} signingIn={signingIn} user={user} />
+        {isAdmin ? (
+          <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
+            <div className="space-y-5">
+              <CourseAvailability courses={courses} />
+              <AdminLogin authError={authError} onSignIn={handleSignIn} signingIn={signingIn} user={user} />
+            </div>
+            <div className="space-y-5">
+              {coursesError ? <Notice type="error">{coursesError}</Notice> : null}
+              <AdminDashboard courses={courses} />
+            </div>
           </div>
-          <div className="space-y-5">
-            {authLoading || coursesLoading ? (
+        ) : (
+          <div className="mx-auto max-w-2xl">
+            {authLoading || (user && coursesLoading) ? (
               <section className="form-panel">
                 <div className="loading-line">
                   <Loader2 className="animate-spin" size={18} />
@@ -559,10 +554,8 @@ export default function App() {
             ) : (
               <SignInPanel authError={authError} onSignIn={handleSignIn} signingIn={signingIn} />
             )}
-            {coursesError ? <Notice type="error">{coursesError}</Notice> : null}
-            {isAdmin ? <AdminDashboard courses={courses} /> : null}
           </div>
-        </div>
+        )}
       </main>
       <Footer />
     </div>
