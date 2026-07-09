@@ -2,120 +2,93 @@
 
 Production-ready Course Registration Portal for Madras Institute of Technology, Anna University.
 
-The application prioritizes correctness and Firestore data integrity over visual complexity. Seat allocation is performed only inside a Firestore transaction. A successful registration updates the course seat counter, creates the registration document, and creates the register-number lock in the same atomic commit.
+The app now uses Supabase Auth and Supabase Postgres. Student registration is handled by one SQL function so duplicate register numbers, duplicate Google accounts, and course seat limits are checked inside the database transaction.
 
 ## Stack
 
 - React + Vite
 - Tailwind CSS
-- Firebase Authentication with Google Sign-In
-- Cloud Firestore
-- Firebase SDK v10+
-- Firebase Hosting config included
+- Supabase Auth with Google OAuth
+- Supabase Postgres
 - Vercel deployment config included
 
-## Critical Data Integrity Design
+## Supabase Setup
 
-Registration uses `runTransaction` in `src/services/registration.js`.
-
-Transaction flow:
-
-1. Read `courses/{courseName}`.
-2. Read `registrations/{googleUid}`.
-3. Read `registerNumbers/{normalizedRegisterNumber}`.
-4. Fail if the course is full.
-5. Fail if the Google account already has a registration.
-6. Fail if the Register Number already has a lock.
-7. Increment `courses/{courseName}.filled`.
-8. Create `registerNumbers/{normalizedRegisterNumber}`.
-9. Create `registrations/{googleUid}`.
-10. Commit.
-
-If any step fails, Firestore rolls back the transaction. If one seat remains and 20 users submit at the same time, Firestore retries conflicting transactions and only one can commit the final seat increment.
-
-The registration document ID is the Google UID, so browser refreshes, double clicks, or network retries cannot create multiple registration documents for the same Google account. The `registerNumbers` lock collection prevents a Register Number from being used twice.
-
-## Firestore Collections
+1. Create a Supabase project.
+2. Go to `SQL Editor`.
+3. Open `supabase-schema.sql` from this repository.
+4. Paste the full script and click `Run`.
+5. Go to `Authentication` > `Providers` > `Google` and enable Google.
+6. In Google Cloud OAuth, add this authorized redirect URI:
 
 ```text
-courses/{courseName}
-  capacity: number
-  filled: number
-
-registrations/{googleUid}
-  googleUid: string
-  googleEmail: string
-  registerNumber: string
-  registerNumberKey: string
-  studentName: string
-  selectedCourse: string
-  createdAt: server timestamp
-  createdAtClient: client timestamp fallback
-
-registerNumbers/{normalizedRegisterNumber}
-  googleUid: string
-  registrationId: string
-  selectedCourse: string
-  createdAt: server timestamp
+https://juxpythwroesnzeaiydm.supabase.co/auth/v1/callback
 ```
 
-The helper `registerNumbers` collection is intentionally not readable by students or admins in the UI. It exists only to enforce Register Number uniqueness atomically.
-
-## Firebase Setup
-
-1. Create a Firebase project on the free Spark plan.
-2. Enable Authentication > Sign-in method > Google.
-3. Create a Cloud Firestore database.
-4. Add a web app in Firebase project settings.
-5. Copy `.env.example` to `.env.local` and fill in the Firebase web config:
-
-```bash
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-```
-
-6. Deploy rules and indexes:
-
-```bash
-firebase deploy --only firestore
-```
-
-7. Seed course documents in Firestore using the values in `course-seed.json`:
+7. Add these redirect URLs in Supabase Auth URL settings:
 
 ```text
-courses/IoT                  capacity: 35, filled: 0
-courses/Robotics             capacity: 40, filled: 0
-courses/Space Electronics    capacity: 35, filled: 0
-courses/RTL                  capacity: 40, filled: 0
+http://localhost:5173
+https://annauniversity-course-registration-portal.vercel.app
 ```
 
-You can create these four documents from the Firebase Console while signed in as the authorized admin email.
+Use your exact Vercel domain if it is different.
 
-## Security Rules
+## Environment Variables
 
-Security rules are in `firestore.rules`.
-
-- Signed-in students can read course seat availability.
-- Signed-in students can create exactly one registration document under their own Google UID.
-- Students cannot list registrations or read another student's registration.
-- Students can `get` only their own registration document because the client-side Firestore transaction must verify that the Google UID is unused before creating it.
-- Students can `get` individual `registerNumbers` lock documents because the transaction must verify Register Number uniqueness. The lock documents contain no student name or email.
-- Students cannot list `registerNumbers`.
-- The authorized admin email `dharaneesh963@gmail.com` can read registrations for the dashboard and CSV export.
-- Nobody can update or delete registrations.
-- Course counter updates are accepted only when the same atomic write creates the matching registration and register-number lock.
-
-If the app shows `Missing or insufficient permissions`, deploy the latest Firestore rules first:
+Set these in `.env.local` for local development and in Vercel Project Settings for production:
 
 ```bash
-firebase deploy --only firestore
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
 ```
 
-After the latest rules are deployed, signed-in students can register without admin approval. Missing course documents can be created safely by the registration transaction using the fixed official capacities.
+Get both values from Supabase:
+
+`Project Settings` > `API`
+
+Use the public `anon` key, not the service role key.
+
+## Database Tables
+
+```text
+courses
+  name
+  capacity
+  filled
+  created_at
+  updated_at
+
+registrations
+  id
+  google_uid
+  google_email
+  register_number
+  student_name
+  selected_course
+  created_at
+```
+
+## Data Integrity
+
+The client calls:
+
+```text
+register_student(register_number, student_name, selected_course)
+```
+
+The SQL function:
+
+1. Requires a signed-in Supabase user.
+2. Normalizes the register number.
+3. Locks the selected course row.
+4. Rejects duplicate Google accounts.
+5. Rejects duplicate register numbers.
+6. Rejects full courses.
+7. Increments the course filled count.
+8. Creates the registration row.
+
+If any step fails, Postgres rolls back the transaction.
 
 ## Local Development
 
@@ -126,14 +99,6 @@ npm run dev
 
 Open the Vite URL shown in the terminal.
 
-For Google sign-in during local testing, prefer:
-
-```text
-http://localhost:5173/
-```
-
-If you use `http://127.0.0.1:5173/`, add `127.0.0.1` under Firebase Authentication > Settings > Authorized domains.
-
 ## Build
 
 ```bash
@@ -142,22 +107,19 @@ npm run build
 
 ## Deploy on Vercel
 
-1. Push this project to a Git repository.
+1. Push this project to GitHub.
 2. Import the repository in Vercel.
-3. Set the six `VITE_FIREBASE_*` environment variables in Vercel project settings.
-4. Deploy.
-
-`vercel.json` is already configured for Vite single-page app routing.
+3. Add `VITE_SUPABASE_URL`.
+4. Add `VITE_SUPABASE_ANON_KEY`.
+5. Deploy.
 
 ## Admin Dashboard
 
-Click **Admin Login** and sign in with:
+Sign in with:
 
 ```text
 dharaneesh963@gmail.com
 ```
-
-Any other Google account sees `Access Denied` and cannot access admin functionality.
 
 The dashboard includes:
 
@@ -166,12 +128,14 @@ The dashboard includes:
 - Remaining seats
 - Search by Register Number or Name
 - Filter by Course
-- Live updates
-- Excel-compatible CSV download with UTF-8 BOM
+- CSV download
 
-## Operational Notes
+## Verification
 
-- Show `Registration Successful` only after Firestore confirms the transaction commit.
-- Keep the `filled` counters and registration documents in Firestore; do not cache confirmed registrations only in the browser.
-- Do not manually edit `registrations` or `registerNumbers`.
-- If a registration must be corrected, create a deliberate admin maintenance process outside this public portal and audit it carefully.
+After deploying:
+
+1. Sign in with Google.
+2. Submit one student registration.
+3. Open Supabase `Table Editor`.
+4. Check `registrations` for the saved row.
+5. Check `courses.filled` increased by 1.

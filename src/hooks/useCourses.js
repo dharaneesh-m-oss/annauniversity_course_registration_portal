@@ -1,44 +1,52 @@
 import { useEffect, useMemo, useState } from 'react';
-import { onSnapshot, query } from 'firebase/firestore';
 import { COURSE_ORDER, initialCourseState } from '../constants';
-import { isFirebaseConfigured } from '../firebase';
-import { coursesCollection } from '../services/registration';
-import { friendlyFirestoreError } from '../utils';
+import { isSupabaseConfigured, supabase } from '../supabase';
+import { listCourses } from '../services/registration';
+import { friendlySupabaseError } from '../utils';
 
 export function useCourses(enabled = true, options = {}) {
   const [courses, setCourses] = useState(initialCourseState);
-  const [loading, setLoading] = useState(isFirebaseConfigured && enabled);
+  const [loading, setLoading] = useState(isSupabaseConfigured && enabled);
   const [error, setError] = useState('');
   const { silentPermissionErrors = false } = options;
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !enabled) {
+    if (!isSupabaseConfigured || !enabled) {
       setCourses(initialCourseState);
       setLoading(false);
       setError('');
       return undefined;
     }
-    setLoading(true);
-    return onSnapshot(
-      query(coursesCollection()),
-      (snapshot) => {
-        const next = { ...initialCourseState };
-        snapshot.forEach((courseDoc) => {
-          next[courseDoc.id] = {
-            ...next[courseDoc.id],
-            ...courseDoc.data()
-          };
-        });
-        setCourses(next);
-        setLoading(false);
-      },
-      (err) => {
-        const permissionDenied =
-          err.code === 'permission-denied' || /Missing or insufficient permissions/i.test(err.message || '');
-        setError(silentPermissionErrors && permissionDenied ? '' : friendlyFirestoreError(err, 'read live seat availability'));
-        setLoading(false);
+
+    let active = true;
+
+    async function loadCourses() {
+      try {
+        const rows = await listCourses();
+        if (!active) return;
+        setCourses(Object.fromEntries(rows.map((course) => [course.name, course])));
+        setError('');
+      } catch (err) {
+        if (!active) return;
+        const denied = err.code === '42501' || /permission denied|row-level security/i.test(err.message || '');
+        setError(silentPermissionErrors && denied ? '' : friendlySupabaseError(err, 'read live seat availability'));
+      } finally {
+        if (active) setLoading(false);
       }
-    );
+    }
+
+    setLoading(true);
+    loadCourses();
+
+    const channel = supabase
+      .channel('public:courses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'courses' }, loadCourses)
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
   }, [enabled, silentPermissionErrors]);
 
   const list = useMemo(

@@ -11,28 +11,21 @@ import {
   Search,
   ShieldCheck
 } from 'lucide-react';
-import { onSnapshot, orderBy, query } from 'firebase/firestore';
 import { ADMIN_EMAIL, COURSE_ORDER } from './constants';
-import { isFirebaseConfigured, missingFirebaseConfig } from './firebase';
+import { isSupabaseConfigured, missingSupabaseConfig, supabase } from './supabase';
 import { useAuth } from './hooks/useAuth';
 import { useCourses } from './hooks/useCourses';
 import {
   getCourseSetupStatus,
   getMyRegistration,
+  listRegistrations,
   registerStudent,
-  registrationsCollection,
   seedMissingCourses
 } from './services/registration';
-import { formatTimestamp, friendlyFirestoreError, toExcelCsv } from './utils';
+import { formatTimestamp, friendlySupabaseError, toExcelCsv } from './utils';
 
 function friendlyAuthError(error) {
   if (!error) return '';
-  if (error.code === 'auth/unauthorized-domain') {
-    return 'Google sign-in is blocked because this local domain is not authorized in Firebase. Add 127.0.0.1 and localhost in Firebase Authentication > Settings > Authorized domains.';
-  }
-  if (error.code === 'auth/popup-closed-by-user') {
-    return 'Google sign-in was closed before completion.';
-  }
   return error.message || 'Google sign-in failed. Please try again.';
 }
 
@@ -94,7 +87,7 @@ function CourseAvailability({ courses }) {
     <section className="form-panel">
       <div className="section-title">
         <h2>Live Seat Availability</h2>
-        <p>Updated in real time from Firestore course counters.</p>
+        <p>Updated in real time from Supabase course counters.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {courses.map((course) => (
@@ -156,8 +149,8 @@ function StudentRegistration({ user, courses }) {
       })
       .catch((err) => {
         if (!active) return;
-        if (err.code !== 'permission-denied' && !/Missing or insufficient permissions/i.test(err.message || '')) {
-          setError(friendlyFirestoreError(err, 'check whether this Google account is already registered'));
+        if (err.code !== '42501' && !/permission denied|row-level security/i.test(err.message || '')) {
+          setError(friendlySupabaseError(err, 'check whether this Google account is already registered'));
         }
       })
       .finally(() => {
@@ -198,9 +191,9 @@ function StudentRegistration({ user, courses }) {
         studentName: form.studentName,
         selectedCourse: form.selectedCourse
       });
-      setMessage('Registration Successful. Saved in Firestore.');
+      setMessage('Registration Successful. Saved in Supabase.');
     } catch (err) {
-      setError(friendlyFirestoreError(err, 'save this registration'));
+      setError(friendlySupabaseError(err, 'save this registration'));
     } finally {
       setSubmitting(false);
     }
@@ -220,7 +213,7 @@ function StudentRegistration({ user, courses }) {
   if (existing) {
     return (
       <section className="form-panel">
-        <Notice type="success">{message || 'Saved registration found in Firestore.'}</Notice>
+        <Notice type="success">{message || 'Saved registration found in Supabase.'}</Notice>
         <div className="confirmation-grid">
           <span>Register Number</span>
           <strong>{existing.registerNumber}</strong>
@@ -321,13 +314,30 @@ function AdminDashboard({ courses }) {
   const [setupLoading, setSetupLoading] = useState(true);
 
   useEffect(() => {
-    return onSnapshot(
-      query(registrationsCollection(), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        setRegistrations(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
-      },
-      (err) => setError(friendlyFirestoreError(err, 'read admin registrations'))
-    );
+    let active = true;
+
+    async function loadRegistrations() {
+      try {
+        const rows = await listRegistrations();
+        if (active) {
+          setRegistrations(rows);
+          setError('');
+        }
+      } catch (err) {
+        if (active) setError(friendlySupabaseError(err, 'read admin registrations'));
+      }
+    }
+
+    loadRegistrations();
+    const channel = supabase
+      .channel('public:registrations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, loadRegistrations)
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -338,7 +348,7 @@ function AdminDashboard({ courses }) {
         if (active) setSetupStatus(status);
       })
       .catch((err) => {
-        if (active) setSetupMessage(friendlyFirestoreError(err, 'check course storage setup'));
+        if (active) setSetupMessage(friendlySupabaseError(err, 'check course storage setup'));
       })
       .finally(() => {
         if (active) setSetupLoading(false);
@@ -386,9 +396,9 @@ function AdminDashboard({ courses }) {
     try {
       const status = await seedMissingCourses();
       setSetupStatus(status);
-      setSetupMessage('Course storage setup verified. Missing course documents were created if needed.');
+      setSetupMessage('Course storage setup verified. Missing course rows were created if needed.');
     } catch (err) {
-      setSetupMessage(friendlyFirestoreError(err, 'create missing course documents'));
+      setSetupMessage(friendlySupabaseError(err, 'create missing course rows'));
     } finally {
       setSetupLoading(false);
     }
@@ -411,11 +421,11 @@ function AdminDashboard({ courses }) {
       {error ? <Notice type="error">{error}</Notice> : null}
       <div className="setup-box">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Firestore Storage Status</p>
+          <p className="text-sm font-semibold text-slate-900">Supabase Storage Status</p>
           <p className="text-sm text-slate-600">
             {setupReady
-              ? 'Ready: course documents exist and registrations can be stored.'
-              : 'Needs setup: create the required course documents before student registration.'}
+              ? 'Ready: course rows exist and registrations can be stored.'
+              : 'Needs setup: create the required course rows before student registration.'}
           </p>
         </div>
         <button className="btn-secondary" disabled={setupLoading} onClick={onSeedCourses} type="button">
@@ -497,15 +507,10 @@ export default function App() {
 
   async function handleSignIn() {
     setAuthError('');
-    if (window.location.hostname === '127.0.0.1') {
-      setAuthError(
-        'Use http://localhost:5173 for local Google sign-in, or add 127.0.0.1 in Firebase Authentication > Settings > Authorized domains.'
-      );
-      return;
-    }
     setSigningIn(true);
     try {
-      await signIn();
+      const { error } = await signIn();
+      if (error) throw error;
     } catch (error) {
       setAuthError(friendlyAuthError(error));
     } finally {
@@ -513,12 +518,12 @@ export default function App() {
     }
   }
 
-  if (!isFirebaseConfigured) {
+  if (!isSupabaseConfigured) {
     return (
       <main className="min-h-screen bg-mit-paper p-4">
         <div className="mx-auto mt-10 max-w-2xl">
           <Notice type="error">
-            Firebase environment variables are missing: {missingFirebaseConfig.join(', ')}
+            Supabase environment variables are missing: {missingSupabaseConfig.join(', ')}
           </Notice>
         </div>
       </main>
