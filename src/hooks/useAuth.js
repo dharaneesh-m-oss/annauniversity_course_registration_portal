@@ -12,6 +12,10 @@ function mapSupabaseUser(session) {
   };
 }
 
+function getRedirectUrl() {
+  return import.meta.env.VITE_APP_URL || window.location.origin;
+}
+
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
@@ -44,7 +48,7 @@ export function useAuth() {
       supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: getRedirectUrl()
         }
       }),
     signOut: () => supabase.auth.signOut()

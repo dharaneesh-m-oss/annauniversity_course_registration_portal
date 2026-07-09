@@ -41,6 +41,7 @@ Set these in `.env.local` for local development and in Vercel Project Settings f
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-public-anon-key
+VITE_APP_URL=https://annauniversity-course-registration-portal.vercel.app
 ```
 
 Get both values from Supabase:
@@ -48,6 +49,17 @@ Get both values from Supabase:
 `Project Settings` > `API`
 
 Use the public `anon` key, not the service role key.
+
+Set Supabase `Authentication` > `URL Configuration` like this:
+
+```text
+Site URL:
+https://annauniversity-course-registration-portal.vercel.app
+
+Redirect URLs:
+http://localhost:5173
+https://annauniversity-course-registration-portal.vercel.app
+```
 
 ## Database Tables
 
